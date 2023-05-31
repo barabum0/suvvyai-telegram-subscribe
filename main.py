@@ -65,7 +65,8 @@ async def on_start(message: Message, state: FSMContext):
     else:
         text = f"""
     Привет, <b>{message.from_user.full_name}</b>!
-    Для использования бота вам необходимо заполнить небольшую анкету!
+    
+Для использования бота вам необходимо заполнить небольшую анкету!
     """
         await message.reply(text)
 
