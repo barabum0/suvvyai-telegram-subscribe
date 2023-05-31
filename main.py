@@ -6,10 +6,12 @@ from typing import Any
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from dotenv import load_dotenv
 
 from channels import get_telegram_channels, ChannelMiddleware, check_subscribe
+from database import Database, create_db_connection
 from suvvy.models.Chat import ChatMessage, ChatMessageTime
 from suvvy.models.Integration import TelegramIntegrationSettings
 from suvvy.suvvy_ai import SuvvyBotAPI
@@ -17,6 +19,12 @@ from suvvy_middleware import SuvvyMiddleware
 
 bot = Bot(token=getenv('TELEGRAM_BOT_TOKEN'), parse_mode='HTML')
 dp = Dispatcher()
+load_dotenv()
+
+
+class Questionary(StatesGroup):
+    q_1 = State()
+    q_2 = State()
 
 
 async def get_state_param(state: FSMContext, key: str, default: Any = None) -> Any:
@@ -46,17 +54,56 @@ async def get_history(state: FSMContext, key: str = "history", time: bool = Fals
 
 
 @dp.message(F.text.startswith("/start"))
-async def on_start(message: Message):
-    text = f"""
-Привет, <b>{message.from_user.full_name}</b>!
-Отправь мне любое сообщение для начала работы!
-"""
+async def on_start(message: Message, state: FSMContext):
+    db = Database(create_db_connection())
+    if await db.check_questions(message.from_user.id):
+        await state.clear()
+        text = f"""
+Отправьте мне любое сообщение для начала работы!
+            """
+        await message.reply(text)
+    else:
+        text = f"""
+    Привет, <b>{message.from_user.full_name}</b>!
+    Для использования бота вам необходимо заполнить небольшую анкету!
+    """
+        await message.reply(text)
+
+        text = f"""
+    Отправьте мне <b>ваше имя</b>
+        """
+        await message.answer(text)
+        await state.set_state(Questionary.q_1)
+
+
+@dp.message(Questionary.q_1)
+async def on_q1(message: Message, state: FSMContext):
+    # text = f"""Отличное имя, <b>{message.text}</b>!"""
+    # await message.reply(text)
+    text = f"""Теперь отправьте мне <b>вашу должность</b>"""
     await message.answer(text)
+    await set_state_param(state, "q_1", message.text)
+    await state.set_state(Questionary.q_2)
+
+
+@dp.message(Questionary.q_2)
+async def on_q2(message: Message, state: FSMContext):
+    db = Database(create_db_connection())
+    # text = f"""Интересная у вас работа!"""
+    # await message.reply(text)
+    await set_state_param(state, "q_2", message.text)
+    await db.add_questions_to_db({
+        "uid": message.from_user.id,
+        "name": await get_state_param(state, "q_1", ""),
+        "job": message.text
+    })
+    return await on_start(message, state)
 
 
 @dp.message()
 async def on_message(message: Message, state: FSMContext, suvvy: SuvvyBotAPI, telegram_settings: TelegramIntegrationSettings, bot: Bot):
     messages_be = await get_history(state, time=True)
+    db = Database(create_db_connection())
     await add_history_message(state, message.text, 'human')
     if telegram_settings.merge_messages:
         time = datetime.datetime.now().replace(microsecond=0)
@@ -93,7 +140,10 @@ async def on_message(message: Message, state: FSMContext, suvvy: SuvvyBotAPI, te
                     if telegram_settings.system_messages:
                         await message.answer("💥 История <b>была сброшена</b> в связи с простоем!", parse_mode="HTML")
                     await set_state_param(state, "history", [])
-            result = await suvvy.chat_predict(history[len(messages_be)-1:])
+            extra = await db.get_questions(message.from_user.id)
+            extra["username"] = message.from_user.username or "N/A"
+            extra["url"] = message.from_user.url or "N/A"
+            result = await suvvy.chat_predict(history[len(messages_be)-1:], custom_log_info=extra)
         case _:
             result = await suvvy.chat_predict(history)
             await set_state_param(state, "history", [])
@@ -119,5 +169,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     asyncio.run(main())

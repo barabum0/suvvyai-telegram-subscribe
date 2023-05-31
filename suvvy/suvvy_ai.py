@@ -55,16 +55,13 @@ class SuvvyBotAPI:
 
         return r
 
-    async def chat_predict(self, history: List[ChatMessage], placeholders: dict = {}) -> ChatPrediction:
-        if placeholders:
-            r = await self._post_request("/api/v1/predict/chat/placeholder", content={
-                "prompt": [m.dict() for m in history],
-                "placeholders": placeholders
-            })
-        else:
-            r = await self._post_request("/api/v1/predict/chat", content=[
-                m.dict() for m in history
-            ])
+    async def chat_predict(self, history: List[ChatMessage], placeholders: dict = {}, custom_log_info: dict = {}) -> ChatPrediction:
+        r = await self._post_request("/api/v1/predict/chat/placeholder", content={
+            "prompt": [m.dict() for m in history],
+            "placeholders": placeholders,
+            "custom_log_info": custom_log_info,
+            "source": "CorpSoft Telegram Bot"
+        })
 
         d = r.json()
         match r.status_code:
@@ -77,14 +74,13 @@ class SuvvyBotAPI:
             case 413:
                 raise ModelLimitExceeded()
 
-    async def instruct_predict(self, prompt: str, placeholders: dict = {}) -> InstructPrediction:
-        if placeholders:
-            r = await self._post_request("/api/v1/predict/instruct/placeholder", content={
-                "prompt": prompt,
-                "placeholders": placeholders
-            })
-        else:
-            r = await self._post_request("/api/v1/predict/instruct", content=f"\"{prompt}\"")
+    async def instruct_predict(self, prompt: str, placeholders: dict = {}, custom_log_info: dict = {}) -> InstructPrediction:
+        r = await self._post_request("/api/v1/predict/instruct/placeholder", content={
+            "prompt": prompt,
+            "placeholders": placeholders,
+            "custom_log_info": custom_log_info,
+            "source": "CorpSoft Telegram Bot"
+        })
 
         d = r.json()
         match r.status_code:

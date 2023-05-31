@@ -2,6 +2,7 @@ from typing import Callable, Any, Awaitable
 
 import yaml
 from aiogram import BaseMiddleware, Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from suvvy.models.Telegram import TelegramChannel
@@ -16,13 +17,19 @@ def get_telegram_channels():
 
 
 async def check_subscribe(channels, bot, uid):
-    not_a_member = []
-    for channel in channels:
-        member = await bot.get_chat_member(channel.id, uid)
-        if member.status == "left":
-            not_a_member.append(channel)
+    try:
+        not_a_member = []
+        for channel in channels:
+            member = await bot.get_chat_member(channel.id, uid)
+            if member.status == "left":
+                not_a_member.append(channel)
 
-    return not_a_member
+        return not_a_member
+    except TelegramBadRequest as e:
+        if e.message == "Bad Request: chat not found":
+            return []
+        else:
+            raise
 
 
 class ChannelMiddleware(BaseMiddleware):
